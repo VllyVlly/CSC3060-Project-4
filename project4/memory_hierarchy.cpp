@@ -81,9 +81,13 @@ void CacheLevel::write_back_victim(const CacheLine& line, uint64_t index, uint64
     // 3. Increment the write-back counter.
     // 4. Reconstruct the evicted block address from tag + index.
     // 5. Send a write access to the next level.
-    (void)line;
-    (void)index;
-    (void)cycle;
+    if(!line.dirty) return;
+    if(next_level) return;
+    write_backs++;
+    auto addr = reconstruct_addr(line.tag, index);
+    next_level->access(addr, 'w', cycle);
+
+    return;
 }
 
 int CacheLevel::access(uint64_t addr, char type, uint64_t cycle) {
