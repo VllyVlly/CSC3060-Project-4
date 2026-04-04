@@ -82,7 +82,7 @@ void CacheLevel::write_back_victim(const CacheLine& line, uint64_t index, uint64
     // 4. Reconstruct the evicted block address from tag + index.
     // 5. Send a write access to the next level.
     if(!line.dirty) return;
-    if(next_level) return;
+    if(!next_level) return;
     write_backs++;
     auto addr = reconstruct_addr(line.tag, index);
     next_level->access(addr, 'w', cycle);
@@ -121,7 +121,7 @@ int CacheLevel::access(uint64_t addr, char type, uint64_t cycle) {
     auto& set = sets[index];
 
     bool found = false;
-    int way;
+    int way = -1;
     
     for (size_t i = 0; i < set.size(); ++i) {
         auto line = set[i];
@@ -134,20 +134,33 @@ int CacheLevel::access(uint64_t addr, char type, uint64_t cycle) {
     if(found){
         auto& line = set[way];
         hits++;
-        policy->onHit(set,way,cycle);
+        policy->onHit(set, way, cycle);
         if(type == 'w') line.dirty = true;
         if(line.is_prefetched) line.is_prefetched = false;
     } else {
         misses++;
-        auto victim = policy->getVictim(set);
-        if(set[victim].dirty) write_back_victim(set[victim],index,cycle);
+        int victim = -1;
+        for (size_t i = 0; i < set.size(); ++i) {
+            if (!set[i].valid) {
+                victim = static_cast<int>(i);
+                break;
+            }
+        }
+        if (victim == -1) {
+            victim = policy->getVictim(set);
+            if(set[victim].dirty) write_back_victim(set[victim], index, cycle);
+        }
         lat += next_level->access(addr, 'r', cycle);
-        // install_prefetch(addr,cycle);
         set[victim].valid = true;
         set[victim].tag = tag;
         set[victim].dirty = (type == 'w');
-        set[victim].is_prefetched = false; // Remove later?
-        policy->onMiss(set,victim,cycle);
+        set[victim].is_prefetched = false;
+        policy->onMiss(set, victim, cycle);
+    }
+
+    std::vector<uint64_t> prefetches = prefetcher->calculatePrefetch(addr, !found);
+    for (uint64_t prefetch_addr : prefetches) {
+        install_prefetch(prefetch_addr, cycle);
     }
 
     return lat;
@@ -159,8 +172,38 @@ void CacheLevel::install_prefetch(uint64_t addr, uint64_t cycle) {
     // treat prefetched lines as clean and mark is_prefetched = true.
     // If you evict a dirty victim during prefetch installation, reuse
     // write_back_victim(...) instead of duplicating that logic.
-    (void)addr;
-    (void)cycle;
+    if (!next_level) return;
+
+    uint64_t index = get_index(addr);
+    uint64_t tag = get_tag(addr);
+    auto& set = sets[index];
+
+    for (const auto& line : set) {
+        if (line.valid && line.tag == tag) return;
+    }
+
+    int tar_way = -1;
+    for (size_t i = 0; i < set.size(); i++) {
+        if (!set[i].valid) {
+            tar_way = static_cast<int>(i);
+            break;
+        }
+    }
+
+    if (tar_way == -1) {
+        tar_way = policy->getVictim(set);
+        write_back_victim(set[tar_way], index, cycle);
+    }
+
+    next_level->access(addr, 'r', cycle);
+    prefetch_issued++;
+
+    auto& line = set[tar_way];
+    line.valid = true;
+    line.tag = tag;
+    line.dirty = false;
+    line.is_prefetched = true;
+    policy->onMiss(set, tar_way, cycle); 
 }
 
 void CacheLevel::printStats() {

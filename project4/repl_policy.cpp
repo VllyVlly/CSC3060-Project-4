@@ -69,7 +69,7 @@ int SRRIPPolicy::getVictim(std::vector<CacheLine>& set) {
 
 void BIPPolicy::onHit(std::vector<CacheLine>& set, int way, uint64_t cycle) {
     auto& line = set[way];
-    line.last_access = cycle;
+    line.last_access = cycle;   
     // TODO: hits still become MRU.
 }
 
@@ -77,20 +77,19 @@ void BIPPolicy::onMiss(std::vector<CacheLine>& set, int way, uint64_t cycle) {
     // TODO: mostly insert at LRU position, but occasionally insert at MRU.
     // Hint: use insertion_counter and throttle.
     auto& line = set[way];
-    if(throttle == insertion_counter) line.last_access = cycle;
+    insertion_counter++;
+    if(insertion_counter % throttle == 0) line.last_access = cycle; // changed from == to mod 0
     else {
-        insertion_counter++;
-        int index = 0;
         uint64_t least = set[0].last_access;
         for(size_t i = 0; i < set.size(); i++){
             auto latest = set[i].last_access;
             if(least > latest){
                 least = latest;
-                index = i;
             }
         }
 
-        set[index] = line;            
+        line.last_access = (least == 0) ? 0 : least - 1; // Insert at LRU position
+        // set[index] = line; // idt this is helping           
     }
     if(!line.valid) line.valid = true;
 
