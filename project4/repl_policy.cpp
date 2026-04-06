@@ -78,8 +78,10 @@ void BIPPolicy::onMiss(std::vector<CacheLine>& set, int way, uint64_t cycle) {
     // Hint: use insertion_counter and throttle.
     auto& line = set[way];
     insertion_counter++;
-    if(insertion_counter % throttle == 0) line.last_access = cycle; // changed from == to mod 0
-    else {
+    if((insertion_counter & (throttle-1)) == 0){
+        line.last_access = cycle; 
+        insertion_counter = 0;
+    } else {
         uint64_t least = set[0].last_access;
         for(size_t i = 0; i < set.size(); i++){
             auto latest = set[i].last_access;
@@ -88,8 +90,7 @@ void BIPPolicy::onMiss(std::vector<CacheLine>& set, int way, uint64_t cycle) {
             }
         }
 
-        line.last_access = (least == 0) ? 0 : least - 1; // Insert at LRU position
-        // set[index] = line; // idt this is helping           
+        line.last_access = (least == 0) ? 0 : least - 1; // Insert at LRU position         
     }
     if(!line.valid) line.valid = true;
 
