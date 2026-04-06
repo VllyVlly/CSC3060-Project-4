@@ -172,6 +172,7 @@ void CacheLevel::install_prefetch(uint64_t addr, uint64_t cycle) {
     // treat prefetched lines as clean and mark is_prefetched = true.
     // If you evict a dirty victim during prefetch installation, reuse
     // write_back_victim(...) instead of duplicating that logic.
+
     if (!next_level) return;
 
     uint64_t index = get_index(addr);
@@ -203,7 +204,16 @@ void CacheLevel::install_prefetch(uint64_t addr, uint64_t cycle) {
     line.tag = tag;
     line.dirty = false;
     line.is_prefetched = true;
-    policy->onMiss(set, tar_way, cycle); 
+
+    if (config.policy_name == "SRRIP") line.rrpv = 3;
+    else {
+        uint64_t least = cycle;
+        for (size_t i = 0; i < set.size(); ++i) {
+            if (static_cast<int>(i) == tar_way || !set[i].valid) continue;
+            if (set[i].last_access < least) least = set[i].last_access;
+        }
+        line.last_access = least == 0 ? 0 : least - 1;
+    }
 }
 
 void CacheLevel::printStats() {
