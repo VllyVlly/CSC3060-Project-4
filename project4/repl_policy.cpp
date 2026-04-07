@@ -47,24 +47,19 @@ void SRRIPPolicy::onMiss(std::vector<CacheLine>& set, int way, uint64_t cycle) {
 
 int SRRIPPolicy::getVictim(std::vector<CacheLine>& set) {
     // TODO: search for RRPV==3, otherwise age all lines and retry.
-    int index = 0;
-    bool notFound = true;
-    while(notFound){
-        for(size_t i = 0; i < set.size(); i++){
-            if(set[i].rrpv == 3){
-                index = i;
-                notFound = false;
-                break;
-            }   
-        }   
-        if(notFound) {
-            for(size_t i = 0; i < set.size(); i++){
-                set[i].rrpv++;
-            }   
+    while (true) {
+        for (size_t i = 0; i < set.size(); ++i) {
+            if (set[i].rrpv >= 3) {
+                return static_cast<int>(i);
+            }
+        }
+
+        for (auto& line : set) {
+            if (line.rrpv < 3) {
+                line.rrpv++;
+            }
         }
     }
-    
-    return index;
 }
 
 void BIPPolicy::onHit(std::vector<CacheLine>& set, int way, uint64_t cycle) {
@@ -93,7 +88,6 @@ void BIPPolicy::onMiss(std::vector<CacheLine>& set, int way, uint64_t cycle) {
         line.last_access = (least == 0) ? 0 : least - 1; // Insert at LRU position         
     }
     if(!line.valid) line.valid = true;
-
 }
 
 int BIPPolicy::getVictim(std::vector<CacheLine>& set) {
@@ -115,3 +109,4 @@ ReplacementPolicy* createReplacementPolicy(std::string name) {
     if (name == "BIP") return new BIPPolicy();
     return new LRUPolicy();
 }
+
